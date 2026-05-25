@@ -409,7 +409,6 @@ export default function BookingPage() {
                   ticket: 'all',
                   bankTransfer: 'all',
                   atm: 'all',
-                  onboarding_credits: 'all',
                   wallet_purchase: 'all',
                 },
               }}
