@@ -1,0 +1,22 @@
+# Deps
+node_modules/
+
+# Build
+dist/
+generated/
+
+# Env — NUNCA commitear credenciales
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+nails-platform.tar.gz

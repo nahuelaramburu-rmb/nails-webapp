@@ -1,0 +1,116 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import MercadoPagoConfig, { Preference, Payment } from 'mercadopago';
+import { AppointmentsService, CreateAppointmentDto } from '../appointments/appointments.service';
+import { MailService } from '../mail/mail.service';
+
+@Injectable()
+export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+  private mpClient: MercadoPagoConfig;
+
+  constructor(
+    private appointmentsService: AppointmentsService,
+    private mailService: MailService,
+    private config: ConfigService,
+  ) {
+    this.mpClient = new MercadoPagoConfig({
+      accessToken: this.config.get<string>('MP_ACCESS_TOKEN', ''),
+    });
+  }
+
+  async createPreference(dto: CreateAppointmentDto) {
+    const appointment = await this.appointmentsService.create(dto);
+    const service = appointment.service;
+    const isSandbox = this.config.get('MP_SANDBOX') !== 'false';
+    const baseUrl = this.config.get<string>('FRONTEND_URL', 'https://nails.rmbcorp.com');
+    const backendUrl = this.config.get<string>('BACKEND_URL', 'https://nails.rmbcorp.com');
+
+    const preferenceClient = new Preference(this.mpClient);
+    const result = await preferenceClient.create({
+      body: {
+        items: [
+          {
+            id: service.id,
+            title: `Seña - ${service.name}`,
+            quantity: 1,
+            unit_price: appointment.depositAmount || service.price,
+            currency_id: 'ARS',
+          },
+        ],
+        payer: {
+          name: dto.clientName,
+          email: dto.clientEmail,
+        },
+        back_urls: {
+          success: `${baseUrl}/booking/success`,
+          failure: `${baseUrl}/booking/failure`,
+          pending: `${baseUrl}/booking/pending`,
+        },
+        auto_return: 'approved',
+        external_reference: appointment.id,
+        notification_url: `${backendUrl}/api/payments/webhook`,
+        statement_descriptor: 'Nails Studio',
+      },
+    });
+
+    const checkoutUrl = isSandbox ? result.sandbox_init_point : result.init_point;
+    this.logger.log(`Preferencia creada — id: ${result.id} | sandbox: ${isSandbox} | init_point: ${result.init_point} | sandbox_init_point: ${result.sandbox_init_point}`);
+
+    if (!checkoutUrl) {
+      this.logger.error('MP no devolvió una URL de checkout válida');
+      throw new Error('No se pudo obtener la URL de pago de MercadoPago');
+    }
+
+    return {
+      init_point: checkoutUrl,
+      appointmentId: appointment.id,
+    };
+  }
+
+  async handleWebhook(body: any, query: any) {
+    // MP sends both IPN (query params) and webhook (body) formats
+    const type = body?.type || body?.action || query?.type;
+    const rawId = body?.data?.id || query?.['data.id'];
+
+    if (!rawId || (type && !String(type).includes('payment'))) return { ok: true };
+
+    const paymentId = String(rawId);
+    this.logger.log(`Webhook recibido — paymentId: ${paymentId}`);
+
+    try {
+      const paymentClient = new Payment(this.mpClient);
+      const payment = await paymentClient.get({ id: paymentId });
+
+      if (!payment.external_reference) return { ok: true };
+
+      if (payment.status === 'approved') {
+        const appointment = await this.appointmentsService.confirm(
+          payment.external_reference,
+          paymentId,
+          payment.status,
+        );
+
+        const remaining = appointment.service.price - appointment.depositAmount;
+
+        await this.mailService.sendAppointmentConfirmation({
+          clientName: appointment.clientName,
+          clientEmail: appointment.clientEmail,
+          serviceName: appointment.service.name,
+          servicePrice: appointment.service.price,
+          depositAmount: appointment.depositAmount,
+          remainingAmount: remaining,
+          employeeName: appointment.employee.name,
+          date: appointment.date.toISOString().slice(0, 10),
+          startTime: appointment.startTime,
+          endTime: appointment.endTime,
+          paymentId,
+        });
+      }
+    } catch (err) {
+      this.logger.error(`Error procesando webhook: ${err.message}`);
+    }
+
+    return { ok: true };
+  }
+}

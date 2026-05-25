@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nails_platform
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/nails_platform?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 7d
+      PORT: 3000
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN}
+      MP_PUBLIC_KEY: ${MP_PUBLIC_KEY}
+      MP_SANDBOX: ${MP_SANDBOX:-false}
+      FRONTEND_URL: ${FRONTEND_URL:-https://nails.rmbcorp.com}
+      BACKEND_URL: ${BACKEND_URL:-https://nails.rmbcorp.com}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:8091:80"
+
+  # Ejecutar solo una vez: docker compose --profile seed up seed
+  seed:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.seed
+    profiles: [seed]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/nails_platform?schema=public
+
+volumes:
+  postgres_data:
