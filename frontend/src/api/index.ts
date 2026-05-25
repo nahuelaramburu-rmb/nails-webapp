@@ -31,3 +31,4 @@ export const cancelAppointment = (id: string) => api.patch(`/appointments/${id}/
 
 // Payments
 export const createPaymentPreference = (data: any) => api.post('/payments/create-preference', data);
+export const processPayment = (data: any) => api.post('/payments/process', data);

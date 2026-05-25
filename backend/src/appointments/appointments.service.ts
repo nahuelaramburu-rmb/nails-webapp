@@ -92,6 +92,15 @@ export class AppointmentsService {
     });
   }
 
+  async findById(id: string) {
+    const appt = await this.prisma.appointment.findUnique({
+      where: { id },
+      include: { service: true, employee: true },
+    });
+    if (!appt) throw new NotFoundException('Turno no encontrado');
+    return appt;
+  }
+
   async cancel(id: string) {
     const appt = await this.prisma.appointment.findUnique({ where: { id } });
     if (!appt) throw new NotFoundException('Turno no encontrado');

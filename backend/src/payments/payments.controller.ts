@@ -10,6 +10,11 @@ export class PaymentsController {
     return this.paymentsService.createPreference(body);
   }
 
+  @Post('process')
+  processPayment(@Body() body: any) {
+    return this.paymentsService.processPayment(body);
+  }
+
   @Post('webhook')
   @HttpCode(200)
   handleWebhook(@Body() body: any, @Query() query: any) {

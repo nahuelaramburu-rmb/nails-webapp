@@ -22,7 +22,6 @@ export class PaymentsService {
   async createPreference(dto: CreateAppointmentDto) {
     const appointment = await this.appointmentsService.create(dto);
     const service = appointment.service;
-    const isSandbox = this.config.get('MP_SANDBOX') !== 'false';
     const baseUrl = this.config.get<string>('FRONTEND_URL', 'https://nails.rmbcorp.com');
     const backendUrl = this.config.get<string>('BACKEND_URL', 'https://nails.rmbcorp.com');
 
@@ -54,22 +53,35 @@ export class PaymentsService {
       },
     });
 
-    const checkoutUrl = isSandbox ? result.sandbox_init_point : result.init_point;
-    this.logger.log(`Preferencia creada — id: ${result.id} | sandbox: ${isSandbox} | init_point: ${result.init_point} | sandbox_init_point: ${result.sandbox_init_point}`);
-
-    if (!checkoutUrl) {
-      this.logger.error('MP no devolvió una URL de checkout válida');
-      throw new Error('No se pudo obtener la URL de pago de MercadoPago');
-    }
+    this.logger.log(`Preferencia creada — id: ${result.id} | appointmentId: ${appointment.id}`);
 
     return {
-      init_point: checkoutUrl,
+      preferenceId: result.id,
+      publicKey: this.config.get<string>('MP_PUBLIC_KEY', ''),
+      depositAmount: appointment.depositAmount,
       appointmentId: appointment.id,
     };
   }
 
+  async processPayment(body: { formData: any; appointmentId: string }) {
+    const appointment = await this.appointmentsService.findById(body.appointmentId);
+    const paymentClient = new Payment(this.mpClient);
+
+    const payment = await paymentClient.create({
+      body: {
+        ...body.formData,
+        transaction_amount: appointment.depositAmount,
+        external_reference: body.appointmentId,
+        description: `Seña - ${appointment.service.name}`,
+      },
+    });
+
+    this.logger.log(`Pago procesado — id: ${payment.id} | status: ${payment.status}`);
+
+    return { status: payment.status, paymentId: String(payment.id) };
+  }
+
   async handleWebhook(body: any, query: any) {
-    // MP sends both IPN (query params) and webhook (body) formats
     const type = body?.type || body?.action || query?.type;
     const rawId = body?.data?.id || query?.['data.id'];
 
