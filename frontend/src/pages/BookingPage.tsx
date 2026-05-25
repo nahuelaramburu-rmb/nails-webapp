@@ -409,7 +409,7 @@ export default function BookingPage() {
                   ticket: 'all',
                   bankTransfer: 'all',
                   atm: 'all',
-                  wallet_purchase: 'all',
+                  mercadoPago: 'all',
                 },
               }}
               onSubmit={handleSubmitPayment as any}
