@@ -25,6 +25,10 @@ export class PaymentsService {
     const baseUrl = this.config.get<string>('FRONTEND_URL', 'https://nails.rmbcorp.com');
     const backendUrl = this.config.get<string>('BACKEND_URL', 'https://nails.rmbcorp.com');
 
+    const parts = dto.clientName.trim().split(' ');
+    const firstName = parts[0];
+    const lastName = parts.slice(1).join(' ') || parts[0];
+
     const preferenceClient = new Preference(this.mpClient);
     const result = await preferenceClient.create({
       body: {
@@ -32,14 +36,21 @@ export class PaymentsService {
           {
             id: service.id,
             title: `Seña - ${service.name}`,
+            description: `Turno el ${dto.date} a las ${dto.startTime}hs con ${appointment.employee.name}`,
             quantity: 1,
             unit_price: appointment.depositAmount || service.price,
             currency_id: 'ARS',
+            category_id: 'services',
           },
         ],
         payer: {
-          name: dto.clientName,
+          name: firstName,
+          surname: lastName,
           email: dto.clientEmail,
+          phone: {
+            area_code: '',
+            number: dto.clientPhone,
+          },
         },
         back_urls: {
           success: `${baseUrl}/booking/success`,
@@ -50,16 +61,18 @@ export class PaymentsService {
         external_reference: appointment.id,
         notification_url: `${backendUrl}/api/payments/webhook`,
         statement_descriptor: 'Nails Studio',
+        payment_methods: {
+          installments: 1,
+        },
       },
     });
 
     this.logger.log(`Preferencia creada — id: ${result.id} | appointmentId: ${appointment.id}`);
 
     return {
-      preferenceId: result.id,
-      publicKey: this.config.get<string>('MP_PUBLIC_KEY', ''),
-      depositAmount: appointment.depositAmount,
+      init_point: result.init_point,
       appointmentId: appointment.id,
+      depositAmount: appointment.depositAmount,
     };
   }
 

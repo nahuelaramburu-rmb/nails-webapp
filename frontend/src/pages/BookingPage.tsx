@@ -1,7 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { getServices, getAvailability, getSlots, createPaymentPreference, processPayment } from '../api';
-import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
+import { getServices, getAvailability, getSlots, createPaymentPreference } from '../api';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isBefore, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Check, Clock, ArrowLeft } from 'lucide-react';
@@ -10,9 +9,8 @@ import toast from 'react-hot-toast';
 interface Service { id: string; name: string; durationMinutes: number; price: number; depositAmount: number; description?: string; }
 interface Employee { id: string; name: string; color: string; phone?: string; }
 interface Availability { employeeId: string; date: string; employee: Employee; }
-interface PaymentData { preferenceId: string; publicKey: string; depositAmount: number; appointmentId: string; }
 
-type Step = 'service' | 'employee-date' | 'slot' | 'form' | 'payment';
+type Step = 'service' | 'employee-date' | 'slot' | 'form';
 
 const formatDuration = (min: number) =>
   min >= 60 ? `${Math.floor(min / 60)}h${min % 60 ? ` ${min % 60}min` : ''}` : `${min}min`;
@@ -25,8 +23,6 @@ export default function BookingPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', email: '', phone: '', notes: '' });
-  const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
-  const mpInitialized = useRef(false);
 
   const year = calendarDate.getFullYear();
   const month = calendarDate.getMonth() + 1;
@@ -51,7 +47,7 @@ export default function BookingPage() {
   const preferenceMutation = useMutation({
     mutationFn: (data: any) => createPaymentPreference(data),
     onSuccess: (res) => {
-      const { preferenceId, publicKey, appointmentId, depositAmount } = res.data;
+      const { init_point, appointmentId, depositAmount } = res.data;
       sessionStorage.setItem('pendingBooking', JSON.stringify({
         appointmentId,
         serviceName: selectedService?.name,
@@ -64,34 +60,10 @@ export default function BookingPage() {
         clientName: form.name,
         clientEmail: form.email,
       }));
-      if (!mpInitialized.current) {
-        initMercadoPago(publicKey, { locale: 'es-AR' });
-        mpInitialized.current = true;
-      }
-      setPaymentData({ preferenceId, publicKey, depositAmount, appointmentId });
-      setStep('payment');
+      window.location.href = init_point;
     },
     onError: (err: any) => toast.error(err.response?.data?.message ?? 'Error al iniciar el pago'),
   });
-
-  const handleSubmitPayment = async ({ formData }: { selectedPaymentMethod: string; formData: any }) => {
-    try {
-      const res = await processPayment({ formData, appointmentId: paymentData!.appointmentId });
-      const { status, paymentId } = res.data;
-      // Update sessionStorage with payment ID for success page
-      const booking = JSON.parse(sessionStorage.getItem('pendingBooking') || '{}');
-      sessionStorage.setItem('pendingBooking', JSON.stringify(booking));
-      if (status === 'approved') {
-        window.location.href = `/booking/success?collection_id=${paymentId}&collection_status=approved`;
-      } else if (status === 'in_process' || status === 'pending') {
-        window.location.href = '/booking/pending';
-      } else {
-        window.location.href = '/booking/failure';
-      }
-    } catch {
-      throw new Error('Error procesando el pago');
-    }
-  };
 
   const availDays = new Set(availability.map(a => a.date.slice(0, 10)));
   const employeesOnDate = selectedDate
@@ -141,9 +113,8 @@ export default function BookingPage() {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Step indicator — only for form steps */}
-        {step !== 'payment' && (
-          <div className="flex items-center gap-2 mb-8 justify-center">
+        {/* Step indicator */}
+        <div className="flex items-center gap-2 mb-8 justify-center">
             {visibleSteps.map((s, i) => {
               const idx = visibleSteps.indexOf(step);
               const isActive = s === step;
@@ -161,7 +132,6 @@ export default function BookingPage() {
               );
             })}
           </div>
-        )}
 
         {/* STEP 1: Select service */}
         {step === 'service' && (
@@ -374,52 +344,6 @@ export default function BookingPage() {
           </div>
         )}
 
-        {/* STEP 5: Payment Brick */}
-        {step === 'payment' && paymentData && (
-          <div>
-            <button onClick={() => setStep('form')} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition">
-              <ArrowLeft size={15} /> Volver
-            </button>
-            <div className="mb-6 text-center">
-              <h2 className="text-xl font-bold text-gray-800 mb-1">Pagá la seña</h2>
-              <p className="text-gray-500 text-sm">Elegí tu medio de pago preferido</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 grid grid-cols-3 divide-x divide-gray-100 text-center">
-              <div className="px-3">
-                <p className="text-xs text-gray-400 uppercase font-semibold tracking-wide mb-1">Precio total</p>
-                <p className="text-base font-bold text-gray-800">${selectedService?.price.toLocaleString('es-AR')}</p>
-              </div>
-              <div className="px-3">
-                <p className="text-xs text-purple-500 uppercase font-semibold tracking-wide mb-1">Seña a pagar</p>
-                <p className="text-base font-bold text-purple-600">${paymentData.depositAmount.toLocaleString('es-AR')}</p>
-              </div>
-              <div className="px-3">
-                <p className="text-xs text-gray-400 uppercase font-semibold tracking-wide mb-1">Resta el día</p>
-                <p className="text-base font-bold text-pink-600">
-                  ${((selectedService?.price ?? 0) - paymentData.depositAmount).toLocaleString('es-AR')}
-                </p>
-              </div>
-            </div>
-            <Payment
-              initialization={{ amount: paymentData.depositAmount, preferenceId: paymentData.preferenceId }}
-              customization={{
-                paymentMethods: {
-                  creditCard: 'all',
-                  debitCard: 'all',
-                  ticket: 'all',
-                  bankTransfer: 'all',
-                  atm: 'all',
-                  mercadoPago: 'all',
-                },
-              }}
-              onSubmit={handleSubmitPayment as any}
-              onError={(error: any) => {
-                console.error('[MP Brick error]', error);
-                toast.error('Error al procesar el pago. Intentá de nuevo.');
-              }}
-            />
-          </div>
-        )}
       </div>
     </div>
   );
