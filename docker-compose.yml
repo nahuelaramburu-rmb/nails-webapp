@@ -36,6 +36,21 @@ services:
       MP_SANDBOX: ${MP_SANDBOX:-false}
       FRONTEND_URL: ${FRONTEND_URL:-https://nails.rmbcorp.com}
       BACKEND_URL: ${BACKEND_URL:-https://nails.rmbcorp.com}
+      OPENWA_URL: http://openwa:2785
+      OPENWA_API_KEY: ${OPENWA_API_KEY}
+      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-nails}
+
+  openwa:
+    image: ghcr.io/rmyndharis/openwa:latest
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:2785:2785"
+    volumes:
+      - openwa_data:/app/data
+    environment:
+      PORT: 2785
+      NODE_ENV: production
+      MASTER_KEY: ${OPENWA_API_KEY}
 
   frontend:
     build:
@@ -61,3 +76,4 @@ services:
 
 volumes:
   postgres_data:
+  openwa_data:

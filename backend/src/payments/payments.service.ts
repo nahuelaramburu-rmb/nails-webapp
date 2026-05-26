@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import MercadoPagoConfig, { Preference, Payment } from 'mercadopago';
 import { AppointmentsService, CreateAppointmentDto } from '../appointments/appointments.service';
 import { MailService } from '../mail/mail.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 @Injectable()
 export class PaymentsService {
@@ -12,6 +13,7 @@ export class PaymentsService {
   constructor(
     private appointmentsService: AppointmentsService,
     private mailService: MailService,
+    private whatsappService: WhatsappService,
     private config: ConfigService,
   ) {
     this.mpClient = new MercadoPagoConfig({
@@ -118,9 +120,10 @@ export class PaymentsService {
 
         const remaining = appointment.service.price - appointment.depositAmount;
 
-        await this.mailService.sendAppointmentConfirmation({
+        const confirmationData = {
           clientName: appointment.clientName,
           clientEmail: appointment.clientEmail,
+          clientPhone: appointment.clientPhone,
           serviceName: appointment.service.name,
           servicePrice: appointment.service.price,
           depositAmount: appointment.depositAmount,
@@ -130,7 +133,12 @@ export class PaymentsService {
           startTime: appointment.startTime,
           endTime: appointment.endTime,
           paymentId,
-        });
+        };
+
+        await Promise.allSettled([
+          this.mailService.sendAppointmentConfirmation(confirmationData),
+          this.whatsappService.sendAppointmentConfirmation(confirmationData),
+        ]);
       }
     } catch (err) {
       this.logger.error(`Error procesando webhook: ${err.message}`);

@@ -3,9 +3,10 @@ import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { AppointmentsModule } from '../appointments/appointments.module';
 import { MailModule } from '../mail/mail.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 
 @Module({
-  imports: [AppointmentsModule, MailModule],
+  imports: [AppointmentsModule, MailModule, WhatsappModule],
   controllers: [PaymentsController],
   providers: [PaymentsService],
 })
